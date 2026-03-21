@@ -1,0 +1,37 @@
+# ─── Python ───────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# ─── Environment ──────────────────────────────────
+.env
+.venv/
+env/
+venv/
+
+# ─── IDE ──────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ─── OS ───────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ─── Data (too large for git) ─────────────────────
+data/raw/*.csv
+data/era5/*.nc
+data/era5_patches/*.npy
+
+# ─── Model checkpoints ───────────────────────────
+checkpoints/*.pt
+
+# ─── Jupyter ──────────────────────────────────────
+.ipynb_checkpoints/
+
+# ─── Distribution ────────────────────────────────
+dist/
+build/
+*.egg-info/

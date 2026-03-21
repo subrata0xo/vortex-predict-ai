@@ -1,0 +1,26 @@
+# Core scientific
+numpy>=1.24
+pandas>=2.0
+scipy>=1.11
+
+# Deep learning (CPU)
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch>=2.1
+torchvision>=0.16
+
+# Data download
+requests>=2.31
+tqdm>=4.66
+
+# Visualisation
+matplotlib>=3.8
+seaborn>=0.13
+
+# Core
+pydantic>=2.5
+
+# Dashboard
+streamlit>=1.28
+folium>=0.15
+streamlit-folium>=0.15
+plotly>=5.18

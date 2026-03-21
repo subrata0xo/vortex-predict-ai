@@ -1,0 +1,57 @@
+# Cyclone Prediction Configuration
+
+data:
+  raw_dir: data/raw
+  processed_dir: data/processed
+  era5_dir: data/era5
+  era5_patches_dir: data/era5_patches
+  eda_plots_dir: data/eda_plots
+  ibtracs_url: "https://www.ncei.noaa.gov/data/international-best-track-archive-for-climate-stewardship-ibtracs/v04r01/access/csv/ibtracs.NI.list.v04r01.csv"
+
+features:
+  lookback: 8          # 48h history at 6-hourly intervals
+  n_features: 17
+  n_labels: 12
+
+split:
+  val_year: 2018
+  test_year: 2020
+
+training:
+  batch_size: 64
+  lr: 0.001
+  epochs: 50
+  patience: 10
+  grad_clip: 1.0
+
+model:
+  lstm:
+    hidden_size: 128
+    num_layers: 2
+    dropout: 0.2
+  hybrid:
+    track_hidden: 128
+    track_layers: 2
+    era5_channels: 8
+    era5_hidden: 32
+    fusion_dim: 192
+    n_heads: 4
+    n_layers: 2
+    dropout: 0.2
+
+loss:
+  lambda_track: 1.0
+  lambda_wind: 0.5
+  lambda_ri: 2.0
+  lambda_landfall: 1.0
+  use_focal: false
+  focal_gamma: 2.0
+
+checkpoints:
+  dir: checkpoints
+  lstm_best: checkpoints/best.pt
+  hybrid_best: checkpoints/hybrid_best.pt
+
+api:
+  host: "0.0.0.0"
+  port: 8000
