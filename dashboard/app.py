@@ -175,8 +175,17 @@ with st.sidebar:
                 row["SID"]: row["SID"] for _, row in storms.iterrows()
             }
             
+        try:
+            from dashboard.live_tracker import fetch_live_storms
+            live_storms = fetch_live_storms()
+            st.session_state["live_storms_cache"] = live_storms
+            for sname in reversed(list(live_storms.keys())):
+                storm_options = {f"🔴 LIVE: {sname}": f"LIVE_{sname}"} | storm_options
+        except Exception:
+            pass
+            
         # Add custom choice at the top
-        storm_options = {"🌀 Custom Live Storm": "CUSTOM"} | storm_options
+        storm_options = {"🌀 Custom Manual Input": "CUSTOM"} | storm_options
 
         selected_label = st.selectbox(
             "Select storm",
@@ -209,6 +218,12 @@ track_wind = []
 prediction = None
 is_ready_to_render = False
 
+if str(selected_sid).startswith("LIVE_"):
+    st.session_state["active_live_storm"] = str(selected_sid).replace("LIVE_", "")
+    selected_sid = "CUSTOM"
+else:
+    st.session_state["active_live_storm"] = None
+
 if selected_sid == "CUSTOM":
     st.markdown("### ✍️ Enter Live Storm Data")
     st.markdown("Provide the **last 48 hours** of track data (8 observations at 6-hour intervals) to predict the future path.")
@@ -217,6 +232,18 @@ if selected_sid == "CUSTOM":
     dlats = [12.0, 12.5, 13.0, 13.6, 14.2, 14.9, 15.5, 16.0]
     dlons = [80.0, 79.5, 79.0, 78.4, 77.8, 77.1, 76.5, 76.0]
     dwinds = [25.0, 30.0, 35.0, 40.0, 50.0, 55.0, 60.0, 65.0]
+    dpress = [1000.0] * 8
+    
+    # Auto-fill if a LIVE storm was selected
+    active_ls = st.session_state.get("active_live_storm")
+    if active_ls and "live_storms_cache" in st.session_state:
+        pts = st.session_state["live_storms_cache"].get(active_ls, [])
+        if len(pts) == 8:
+            dlats = [p.get("lat", 0) for p in pts]
+            dlons = [p.get("lon", 0) for p in pts]
+            dwinds = [p.get("wind", 0) for p in pts]
+            dpress = [p.get("pressure", 1000) for p in pts]
+            st.success(f"Successfully fetched live historical track for **{active_ls}** from GDACS.")
     
     with st.expander("📝 Manual Data Entry Form", expanded=True):
         with st.form("custom_storm_form"):
@@ -234,7 +261,7 @@ if selected_sid == "CUSTOM":
                 lat = c[0].number_input(f"Lat {lbl}", value=dlats[i], step=0.1, label_visibility="collapsed", key=f"lat_{i}")
                 lon = c[1].number_input(f"Lon {lbl}", value=dlons[i], step=0.1, label_visibility="collapsed", key=f"lon_{i}")
                 wind = c[2].number_input(f"Wind {lbl}", value=dwinds[i], step=1.0, label_visibility="collapsed", key=f"wnd_{i}")
-                pres = c[3].number_input(f"Pres {lbl}", value=1000.0, step=1.0, label_visibility="collapsed", key=f"prs_{i}")
+                pres = c[3].number_input(f"Pres {lbl}", value=float(dpress[i]), step=1.0, label_visibility="collapsed", key=f"prs_{i}")
                 inputs.append({"lat": lat, "lon": lon, "wind": wind, "pressure": pres, "dist2land": 500.0, "timestamp": None})
                 
             submitted = st.form_submit_button("Run AI Prediction 🚀")
