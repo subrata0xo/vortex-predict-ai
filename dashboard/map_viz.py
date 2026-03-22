@@ -68,14 +68,18 @@ def render_storm_map(track_lat: list, track_lon: list,
     # Draw track segments colored by intensity
     for i in range(1, len(track_lat)):
         cat = _wind_to_category(track_wind[i])
-        folium.PolyLine(
+        plugins.AntPath(
             locations=[
                 [track_lat[i-1], track_lon[i-1]],
                 [track_lat[i], track_lon[i]],
             ],
             color=SS_COLORS[cat],
-            weight=3,
+            pulse_color="#ffffff",
+            weight=4,
             opacity=0.8,
+            dash_array=[10, 20],
+            delay=1000,
+            hardware_accelerated=True,
         ).add_to(m)
 
     # Mark current position
@@ -119,13 +123,16 @@ def render_storm_map(track_lat: list, track_lon: list,
                 forecast_lats.append(forecast[horizon]["lat"])
                 forecast_lons.append(forecast[horizon]["lon"])
 
-        # Dashed forecast line
-        folium.PolyLine(
+        # Animated forecast line
+        plugins.AntPath(
             locations=list(zip(forecast_lats, forecast_lons)),
-            color="#fbbf24",
-            weight=2,
-            opacity=0.7,
-            dash_array="8 4",
+            color="#0ea5e9",  # Vibrant cyan
+            pulse_color="#ffffff",
+            weight=4,
+            opacity=0.9,
+            dash_array=[15, 30],
+            delay=800,  # Slightly faster pulse for future
+            hardware_accelerated=True,
         ).add_to(m)
 
         # Forecast point markers
@@ -154,7 +161,7 @@ def render_storm_map(track_lat: list, track_lon: list,
             f'{SS_NAMES[cat]}<br>'
         )
     legend_html += (
-        '<span style="color:#fbbf24">- - -</span> Forecast'
+        '<span style="color:#0ea5e9">- - -</span> Forecast (Animated)'
         '</div>'
     )
     m.get_root().html.add_child(folium.Element(legend_html))
