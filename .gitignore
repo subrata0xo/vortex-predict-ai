@@ -21,12 +21,13 @@ venv/
 Thumbs.db
 
 # ─── Data (too large for git) ─────────────────────
-data/raw/*.csv
-data/era5/*.nc
-data/era5_patches/*.npy
+data/raw/
+data/era5/
+data/era5_patches/
+data/processed/*.npy
 
 # ─── Model checkpoints ───────────────────────────
-checkpoints/*.pt
+checkpoints/
 
 # ─── Jupyter ──────────────────────────────────────
 .ipynb_checkpoints/
