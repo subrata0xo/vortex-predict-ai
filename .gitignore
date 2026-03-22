@@ -27,7 +27,7 @@ data/era5_patches/
 data/processed/*.npy
 
 # ─── Model checkpoints ───────────────────────────
-checkpoints/
+# checkpoints are small (<4MB) so we include them
 
 # ─── Jupyter ──────────────────────────────────────
 .ipynb_checkpoints/
