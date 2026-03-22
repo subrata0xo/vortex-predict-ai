@@ -51,9 +51,9 @@ def render_storm_map(track_lat: list, track_lon: list,
     Returns:
         folium.Map object
     """
-    # Center map on the latest position
+    # Center map on the latest position, or default to Bay of Bengal
     center_lat = track_lat[-1] if track_lat else 15.0
-    center_lon = track_lon[-1] if track_lon else 80.0
+    center_lon = track_lon[-1] if track_lon else 90.0
 
     m = folium.Map(
         location=[center_lat, center_lon],

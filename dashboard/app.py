@@ -161,40 +161,56 @@ with st.sidebar:
 
     st.divider()
 
-    # Storm selector
-    st.markdown("### 🌊 Storm Selection")
-    if not test_meta.empty:
-        storms = test_meta.drop_duplicates(subset=["SID"])
-        storm_options = {
-            f"{row['NAME']} ({row['SID'][:4]})": row["SID"]
-            for _, row in storms.iterrows()
-            if pd.notna(row.get("NAME"))
-        }
-        if not storm_options:
-            storm_options = {
-                row["SID"]: row["SID"] for _, row in storms.iterrows()
-            }
-            
+    # Mode selector
+    dashboard_mode = st.radio(
+        "Dashboard Mode",
+        ["Live Monitor 📡", "Custom Input ✍️", "Historical Analysis 📚"],
+        help="Switch between live operational tracking and historical model evaluation."
+    )
+    
+    st.divider()
+
+    selected_sid = None
+    
+    if dashboard_mode == "Live Monitor 📡":
+        st.markdown("### 🌊 Active Cyclones")
         try:
             from dashboard.live_tracker import fetch_live_storms
             live_storms = fetch_live_storms()
             st.session_state["live_storms_cache"] = live_storms
-            for sname in reversed(list(live_storms.keys())):
-                storm_options = {f"🔴 LIVE: {sname}": f"LIVE_{sname}"} | storm_options
+            live_options = {f"🔴 {sname}": f"LIVE_{sname}" for sname in reversed(list(live_storms.keys()))}
         except Exception:
-            pass
+            live_options = {}
             
-        # Add custom choice at the top
-        storm_options = {"🌀 Custom Manual Input": "CUSTOM"} | storm_options
-
-        selected_label = st.selectbox(
-            "Select storm",
-            options=list(storm_options.keys()),
-        )
-        selected_sid = storm_options[selected_label]
-    else:
+        if live_options:
+            selected_label = st.selectbox("Tracking Now:", options=list(live_options.keys()))
+            selected_sid = live_options[selected_label]
+        else:
+            st.success("✓ No active cyclones detected currently.")
+            selected_sid = "LIVE_NONE"
+            
+    elif dashboard_mode == "Custom Input ✍️":
+        st.markdown("### ✍️ Custom Storm")
+        st.info("Enter manual coordinates in the main panel.")
         selected_sid = "CUSTOM"
-        st.info("No test metadata found. Defaulting to Custom Input mode.")
+        
+    elif dashboard_mode == "Historical Analysis 📚":
+        st.markdown("### 🌊 Historical Storms")
+        if not test_meta.empty:
+            storms = test_meta.drop_duplicates(subset=["SID"])
+            storm_options = {
+                f"{row['NAME']} ({row['SID'][:4]})": row["SID"]
+                for _, row in storms.iterrows()
+                if pd.notna(row.get("NAME"))
+            }
+            if not storm_options:
+                storm_options = {row["SID"]: row["SID"] for _, row in storms.iterrows()}
+                
+            selected_label = st.selectbox("Select past storm", options=list(storm_options.keys()))
+            selected_sid = storm_options[selected_label]
+        else:
+            st.warning("No test metadata found")
+            selected_sid = None
 
     st.divider()
     st.markdown("### ℹ️ Model Info")
@@ -218,13 +234,20 @@ track_wind = []
 prediction = None
 is_ready_to_render = False
 
-if str(selected_sid).startswith("LIVE_"):
+if str(selected_sid).startswith("LIVE_") and selected_sid != "LIVE_NONE":
     st.session_state["active_live_storm"] = str(selected_sid).replace("LIVE_", "")
     selected_sid = "CUSTOM"
+elif selected_sid == "LIVE_NONE":
+    st.session_state["active_live_storm"] = None
 else:
     st.session_state["active_live_storm"] = None
 
-if selected_sid == "CUSTOM":
+if selected_sid == "LIVE_NONE":
+    # Empty default Bay of Bengal view
+    is_ready_to_render = True
+    storm_name = "Bay of Bengal (Clear)"
+    
+elif selected_sid == "CUSTOM":
     st.markdown("### ✍️ Enter Live Storm Data")
     st.markdown("Provide the **last 48 hours** of track data (8 observations at 6-hour intervals) to predict the future path.")
     
