@@ -61,6 +61,19 @@ def render_storm_map(track_lat: list, track_lon: list,
         tiles="CartoDB dark_matter",
     )
 
+    # Add Live Satellite Clouds Overlay
+    folium.raster_layers.WmsTileLayer(
+        url="https://mesonet.agron.iastate.edu/cgi-bin/wms/goes/global_ir.cgi?",
+        layers="goes_global_ir",
+        fmt="image/png",
+        transparent=True,
+        name="Live Satellite Clouds (IR)",
+        overlay=True,
+        control=True,
+        opacity=0.5,
+        show=True,
+    ).add_to(m)
+
     # ── Historical track ─────────────────────────────────────────────────────
     if track_wind is None:
         track_wind = [0.0] * len(track_lat)
@@ -165,5 +178,8 @@ def render_storm_map(track_lat: list, track_lon: list,
         '</div>'
     )
     m.get_root().html.add_child(folium.Element(legend_html))
+
+    # Add layer toggle control
+    folium.LayerControl().add_to(m)
 
     return m

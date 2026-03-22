@@ -430,6 +430,18 @@ if is_ready_to_render:
         with st.expander("📋 Raw Prediction Data"):
             st.json(prediction)
 
+    # ── Animated Wind Flow (Earth Nullschool) ────────────────────────────
+    st.divider()
+    st.markdown("### 🌪️ Live Global Wind Flow")
+    st.markdown("Interactive 3D atmospheric wind animation synced to the current map center.")
+    
+    wind_lat = track_lat[-1] if track_lat else 15.0
+    wind_lon = track_lon[-1] if track_lon else 90.0
+    
+    nullschool_url = f"https://earth.nullschool.net/#current/wind/surface/level/orthographic={wind_lon:.2f},{wind_lat:.2f},1500"
+    
+    st.components.v1.iframe(nullschool_url, height=500, scrolling=False)
+
 # ─── Footer ──────────────────────────────────────────────────────────────────
 st.divider()
 st.markdown(
