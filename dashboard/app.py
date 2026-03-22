@@ -106,7 +106,14 @@ def load_raw_data():
     """Load raw IBTrACS data for track visualization."""
     path = PROJECT_ROOT / "data" / "raw" / "ibtracs_NI.csv"
     if not path.exists():
-        return pd.DataFrame()
+        # Download on the fly if running on cloud
+        from src.data_loader import download_ibtracs
+        try:
+            download_ibtracs(data_dir=str(PROJECT_ROOT / "data" / "raw"))
+        except Exception as e:
+            st.error(f"Failed to download required dataset: {e}")
+            return pd.DataFrame()
+            
     df = pd.read_csv(path, skiprows=[1], low_memory=False)
     for c in ["LAT", "LON", "WMO_WIND", "WMO_PRES", "DIST2LAND"]:
         if c in df.columns:
