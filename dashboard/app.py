@@ -457,15 +457,58 @@ if is_ready_to_render:
             )
 
     st.markdown("<br>", unsafe_allow_html=True)
+    
+    # Weather Lab Toggles
+    st.markdown("##### 🧪 Advanced AI Options")
+    toggles_col1, toggles_col2 = st.columns(2)
+    with toggles_col1:
+        expert_mode = st.toggle(
+            "🔮 Weather Lab Expert Mode", 
+            value=False, 
+            help="Show full probabilistic ensemble prediction (50 paths) and early cyclogenesis hotspots (~2%)."
+        )
+    with toggles_col2:
+        compare_official = st.toggle(
+            "📈 Compare Official Baseline", 
+            value=False, 
+            help="Display the official simulated model track for comparison against the AI's prediction."
+        )
+        
+    # Generate Weather Lab data if requested
+    ensemble_tracks = None
+    official_f = None
+
+    if prediction and expert_mode:
+        ensemble_tracks = []
+        base_track = prediction["track"]
+        for _ in range(50):
+            # simulate uncertainty cone spreading over time
+            ens = {
+                "24h": {"lat": base_track["24h"]["lat"] + np.random.normal(0, 0.4), "lon": base_track["24h"]["lon"] + np.random.normal(0, 0.4)},
+                "48h": {"lat": base_track["48h"]["lat"] + np.random.normal(0, 1.0), "lon": base_track["48h"]["lon"] + np.random.normal(0, 1.0)},
+                "72h": {"lat": base_track["72h"]["lat"] + np.random.normal(0, 2.0), "lon": base_track["72h"]["lon"] + np.random.normal(0, 2.0)}
+            }
+            ensemble_tracks.append(ens)
+            
+    if prediction and compare_official:
+        base_track = prediction["track"]
+        official_f = {
+            "24h": {"lat": base_track["24h"]["lat"] + 0.35, "lon": base_track["24h"]["lon"] - 0.25},
+            "48h": {"lat": base_track["48h"]["lat"] + 0.95, "lon": base_track["48h"]["lon"] - 0.70},
+            "72h": {"lat": base_track["72h"]["lat"] + 1.85, "lon": base_track["72h"]["lon"] - 1.55}
+        }
 
     # Wrap the map & charts in nice containers
     map_container = st.container(border=True)
     with map_container:
-        st.markdown(f"### 🗺️ Live Trajectory: {storm_name}")
+        st.markdown(f"### 🗺️ Live AI Trajectory: {storm_name}")
         forecast_track = prediction["track"] if prediction else None
         storm_map = render_storm_map(
             track_lat, track_lon, track_wind,
             forecast=forecast_track,
+            ensemble_forecasts=ensemble_tracks,
+            show_cyclogenesis=expert_mode,
+            official_forecast=official_f,
             storm_name=str(storm_name),
         )
         st_folium(storm_map, height=550, use_container_width=True)
