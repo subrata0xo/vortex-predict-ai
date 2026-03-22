@@ -174,6 +174,9 @@ with st.sidebar:
             storm_options = {
                 row["SID"]: row["SID"] for _, row in storms.iterrows()
             }
+            
+        # Add custom choice at the top
+        storm_options = {"🌀 Custom Live Storm": "CUSTOM"} | storm_options
 
         selected_label = st.selectbox(
             "Select storm",
@@ -181,8 +184,8 @@ with st.sidebar:
         )
         selected_sid = storm_options[selected_label]
     else:
-        selected_sid = None
-        st.warning("No test metadata found")
+        selected_sid = "CUSTOM"
+        st.info("No test metadata found. Defaulting to Custom Input mode.")
 
     st.divider()
     st.markdown("### ℹ️ Model Info")
@@ -199,113 +202,164 @@ with st.sidebar:
 st.markdown("# 🌀 Cyclone Prediction Dashboard")
 st.markdown("*AI-powered cyclone track & intensity forecasting for the North Indian Basin*")
 
-if selected_sid and not raw_data.empty:
-    # Get storm data
+storm_name = None
+track_lat = []
+track_lon = []
+track_wind = []
+prediction = None
+is_ready_to_render = False
+
+if selected_sid == "CUSTOM":
+    st.markdown("### ✍️ Enter Live Storm Data")
+    st.markdown("Provide the **last 48 hours** of track data (8 observations at 6-hour intervals) to predict the future path.")
+    
+    # Pre-fill with a dummy track just to show how it works
+    dlats = [12.0, 12.5, 13.0, 13.6, 14.2, 14.9, 15.5, 16.0]
+    dlons = [80.0, 79.5, 79.0, 78.4, 77.8, 77.1, 76.5, 76.0]
+    dwinds = [25.0, 30.0, 35.0, 40.0, 50.0, 55.0, 60.0, 65.0]
+    
+    with st.expander("📝 Manual Data Entry Form", expanded=True):
+        with st.form("custom_storm_form"):
+            cols = st.columns(4)
+            cols[0].markdown("**Latitude (°N)**")
+            cols[1].markdown("**Longitude (°E)**")
+            cols[2].markdown("**Wind (knots)**")
+            cols[3].markdown("**Pressure (hPa)**")
+                
+            inputs = []
+            for i in range(8):
+                hr = -(8 - i - 1) * 6
+                lbl = "Now" if hr == 0 else f"{hr}h"
+                c = st.columns(4)
+                lat = c[0].number_input(f"Lat {lbl}", value=dlats[i], step=0.1, label_visibility="collapsed", key=f"lat_{i}")
+                lon = c[1].number_input(f"Lon {lbl}", value=dlons[i], step=0.1, label_visibility="collapsed", key=f"lon_{i}")
+                wind = c[2].number_input(f"Wind {lbl}", value=dwinds[i], step=1.0, label_visibility="collapsed", key=f"wnd_{i}")
+                pres = c[3].number_input(f"Pres {lbl}", value=1000.0, step=1.0, label_visibility="collapsed", key=f"prs_{i}")
+                inputs.append({"lat": lat, "lon": lon, "wind": wind, "pressure": pres, "dist2land": 500.0, "timestamp": None})
+                
+            submitted = st.form_submit_button("Run AI Prediction 🚀")
+            
+    if submitted:
+        storm_name = "Custom Live Storm Forecast"
+        track_lat = [pt["lat"] for pt in inputs]
+        track_lon = [pt["lon"] for pt in inputs]
+        track_wind = [pt["wind"] for pt in inputs]
+        try:
+            with st.spinner("Analyzing storm vectors..."):
+                prediction = server.predict(inputs, model_type=model_type)
+            is_ready_to_render = True
+        except Exception as e:
+            st.error(f"Prediction failed: {e}")
+            
+elif selected_sid and not raw_data.empty:
     storm_data = raw_data[raw_data["SID"] == selected_sid].sort_values("ISO_TIME")
-
     if not storm_data.empty:
-        storm_name = storm_data.iloc[0].get("NAME", selected_sid)
-        track_lat  = storm_data["LAT"].dropna().tolist()
-        track_lon  = storm_data["LON"].dropna().tolist()
+        storm_name = str(storm_data.iloc[0].get("NAME", selected_sid))
+        track_lat = storm_data["LAT"].dropna().tolist()
+        track_lon = storm_data["LON"].dropna().tolist()
         track_wind = storm_data["WMO_WIND"].fillna(0).tolist()
-
-        # Run prediction on the last 8 observations
+        
         if len(storm_data) >= 8:
             last_obs = storm_data.tail(8)
             track_points = []
             for _, row in last_obs.iterrows():
                 track_points.append({
-                    "lat":       row["LAT"],
-                    "lon":       row["LON"],
-                    "wind":      row.get("WMO_WIND", 0) or 0,
-                    "pressure":  row.get("WMO_PRES", None),
+                    "lat": row["LAT"], "lon": row["LON"],
+                    "wind": row.get("WMO_WIND", 0) or 0,
+                    "pressure": row.get("WMO_PRES", None),
                     "dist2land": row.get("DIST2LAND", None),
                     "timestamp": str(row["ISO_TIME"]) if pd.notna(row["ISO_TIME"]) else None,
                 })
-
             try:
                 prediction = server.predict(track_points, model_type=model_type)
             except Exception as e:
-                prediction = None
                 st.error(f"Prediction failed: {e}")
         else:
-            prediction = None
+            st.warning("Historical storm has fewer than 8 observations for prediction.")
+            
+        is_ready_to_render = True
+    else:
+        st.warning(f"No data found for storm {selected_sid}")
+else:
+    st.info("Select a storm from the sidebar to view predictions.")
 
-        # ── Metrics row ──────────────────────────────────────────────────────
-        if prediction:
-            cols = st.columns(4)
-            with cols[0]:
-                st.markdown(
-                    f'<div class="metric-card">'
-                    f'<div class="metric-value">{prediction["wind"]["24h_kt"]:.0f} kt</div>'
-                    f'<div class="metric-label">Wind (24h forecast)</div>'
-                    f'</div>', unsafe_allow_html=True
-                )
-            with cols[1]:
-                st.markdown(
-                    f'<div class="metric-card">'
-                    f'<div class="metric-value" style="color:#8b5cf6">'
-                    f'{prediction["track"]["24h"]["lat"]:.1f}°N</div>'
-                    f'<div class="metric-label">Latitude (24h forecast)</div>'
-                    f'</div>', unsafe_allow_html=True
-                )
-            with cols[2]:
-                ri_pct = prediction["ri_probability"] * 100
-                ri_color = "#ef4444" if ri_pct > 50 else "#fbbf24" if ri_pct > 20 else "#6ee7b7"
-                st.markdown(
-                    f'<div class="metric-card">'
-                    f'<div class="metric-value" style="color:{ri_color}">{ri_pct:.0f}%</div>'
-                    f'<div class="metric-label">RI Probability</div>'
-                    f'</div>', unsafe_allow_html=True
-                )
-            with cols[3]:
-                lf_pct = prediction["landfall_probability"] * 100
-                st.markdown(
-                    f'<div class="metric-card">'
-                    f'<div class="metric-value" style="color:#f43f5e">{lf_pct:.0f}%</div>'
-                    f'<div class="metric-label">Landfall (72h)</div>'
-                    f'</div>', unsafe_allow_html=True
-                )
-
-            # RI alert banner
-            if prediction["ri_alert"]:
-                st.markdown(
-                    '<div class="ri-alert">⚠️ RAPID INTENSIFICATION ALERT — '
-                    'Storm may intensify ≥35 kt in the next 24 hours</div>',
-                    unsafe_allow_html=True,
-                )
-
-        st.markdown("")
-
-        # ── Map + Charts layout ──────────────────────────────────────────────
-        map_col, chart_col = st.columns([3, 2])
-
-        with map_col:
-            st.markdown(f"### 🗺️ Storm Track — {storm_name}")
-            forecast_track = prediction["track"] if prediction else None
-            storm_map = render_storm_map(
-                track_lat, track_lon, track_wind,
-                forecast=forecast_track,
-                storm_name=str(storm_name),
+if is_ready_to_render:
+    # ── Metrics row ──────────────────────────────────────────────────────
+    if prediction:
+        cols = st.columns(4)
+        with cols[0]:
+            st.markdown(
+                f'<div class="metric-card">'
+                f'<div class="metric-value">{prediction["wind"]["24h_kt"]:.0f} kt</div>'
+                f'<div class="metric-label">Wind (24h forecast)</div>'
+                f'</div>', unsafe_allow_html=True
             )
-            st_folium(storm_map, height=500, use_container_width=True)
+        with cols[1]:
+            st.markdown(
+                f'<div class="metric-card">'
+                f'<div class="metric-value" style="color:#8b5cf6">'
+                f'{prediction["track"]["24h"]["lat"]:.1f}°N</div>'
+                f'<div class="metric-label">Latitude (24h forecast)</div>'
+                f'</div>', unsafe_allow_html=True
+            )
+        with cols[2]:
+            ri_pct = prediction["ri_probability"] * 100
+            ri_color = "#ef4444" if ri_pct > 50 else "#fbbf24" if ri_pct > 20 else "#6ee7b7"
+            st.markdown(
+                f'<div class="metric-card">'
+                f'<div class="metric-value" style="color:{ri_color}">{ri_pct:.0f}%</div>'
+                f'<div class="metric-label">RI Probability</div>'
+                f'</div>', unsafe_allow_html=True
+            )
+        with cols[3]:
+            lf_pct = prediction["landfall_probability"] * 100
+            st.markdown(
+                f'<div class="metric-card">'
+                f'<div class="metric-value" style="color:#f43f5e">{lf_pct:.0f}%</div>'
+                f'<div class="metric-label">Landfall (72h)</div>'
+                f'</div>', unsafe_allow_html=True
+            )
 
-        with chart_col:
-            if prediction:
-                # Wind forecast chart
-                current_wind = track_wind[-1] if track_wind else 0
-                fig_wind = wind_forecast_chart(
-                    current_wind=current_wind,
-                    forecast_wind=prediction["wind"],
-                    history_wind=track_wind[-10:] if len(track_wind) >= 10 else track_wind,
-                )
-                st.plotly_chart(fig_wind, use_container_width=True)
+        # RI alert banner
+        if prediction.get("ri_alert", False):
+            st.markdown(
+                '<div class="ri-alert">⚠️ RAPID INTENSIFICATION ALERT — '
+                'Storm may intensify ≥35 kt in the next 24 hours</div>',
+                unsafe_allow_html=True,
+            )
 
-                # RI gauge
-                fig_ri = ri_gauge(prediction["ri_probability"])
-                st.plotly_chart(fig_ri, use_container_width=True)
+    st.markdown("")
 
-        # ── Model comparison ─────────────────────────────────────────────────
+    # ── Map + Charts layout ──────────────────────────────────────────────
+    map_col, chart_col = st.columns([3, 2])
+
+    with map_col:
+        st.markdown(f"### 🗺️ Storm Track — {storm_name}")
+        forecast_track = prediction["track"] if prediction else None
+        storm_map = render_storm_map(
+            track_lat, track_lon, track_wind,
+            forecast=forecast_track,
+            storm_name=str(storm_name),
+        )
+        st_folium(storm_map, height=500, use_container_width=True)
+
+    with chart_col:
+        if prediction:
+            # Wind forecast chart
+            current_wind = track_wind[-1] if track_wind else 0
+            fig_wind = wind_forecast_chart(
+                current_wind=current_wind,
+                forecast_wind=prediction["wind"],
+                history_wind=track_wind[-10:] if len(track_wind) >= 10 else track_wind,
+            )
+            st.plotly_chart(fig_wind, use_container_width=True)
+
+            # RI gauge
+            fig_ri = ri_gauge(prediction["ri_probability"])
+            st.plotly_chart(fig_ri, use_container_width=True)
+
+    # ── Model comparison ─────────────────────────────────────────────────
+    if selected_sid != "CUSTOM":
         st.divider()
         st.markdown("### 📊 Model Performance")
 
@@ -321,15 +375,10 @@ if selected_sid and not raw_data.empty:
             fig_err = track_error_chart(test_results[key])
             st.plotly_chart(fig_err, use_container_width=True)
 
-        # ── Raw prediction data ──────────────────────────────────────────────
-        if prediction:
-            with st.expander("📋 Raw Prediction Data"):
-                st.json(prediction)
-
-    else:
-        st.warning(f"No data found for storm {selected_sid}")
-else:
-    st.info("Select a storm from the sidebar to view predictions.")
+    # ── Raw prediction data ──────────────────────────────────────────────
+    if prediction:
+        with st.expander("📋 Raw Prediction Data"):
+            st.json(prediction)
 
 # ─── Footer ──────────────────────────────────────────────────────────────────
 st.divider()
