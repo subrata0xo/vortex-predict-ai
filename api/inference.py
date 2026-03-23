@@ -172,17 +172,30 @@ class ModelServer:
         # Run inference
         is_hybrid = isinstance(model, HybridCycloneModel)
         if is_hybrid:
-            era5 = torch.zeros(1, 4, 8, 20, 20)
-            preds = model(X, era5)
+            # Stage 2: Provide spatial placeholders for ERA5 and GridSat
+            era5 = torch.zeros(1, 4, 8, 20, 20)           # (B, T, C, H, W)
+            gridsat = torch.zeros(1, 6, 3, 128, 128)     # (B, T, C, H, W)
+            preds = model(X, era5, gridsat)
         else:
             preds = model(X)
 
         track_pred, wind_pred, ri_pred, lf_pred = preds
 
+        # Stage 5 Decoding
         track = track_pred[0].numpy()
-        wind  = wind_pred[0].numpy()
+        
+        # Wind head: [spd24, spd48, spd72, c0...c5]
+        wind_raw = wind_pred[0].numpy()
+        spd24, spd48, spd72 = wind_raw[0], wind_raw[1], wind_raw[2]
+        cat_logits = wind_raw[3:]
+        cat_idx = int(np.argmax(cat_logits))
+        
         ri_prob = torch.sigmoid(ri_pred[0, 0]).item()
-        lf_prob = torch.sigmoid(lf_pred[0, 0]).item()
+        
+        # Landfall head: [lat, lon, time]
+        lf_raw = lf_pred[0].numpy()
+        lf_lat, lf_lon, lf_time = lf_raw[0], lf_raw[1], lf_raw[2]
+        lf_prob = 1.0 if lf_time < 72 else 0.0 # Heuristic for dashboard compat
 
         return {
             "model_type": model_type,
@@ -195,11 +208,17 @@ class ModelServer:
                         "lon": round(float(track[5]), 4)},
             },
             "wind": {
-                "24h_kt": round(float(wind[0]), 1),
-                "48h_kt": round(float(wind[1]), 1),
-                "72h_kt": round(float(wind[2]), 1),
+                "24h_kt": round(float(spd24), 1),
+                "48h_kt": round(float(spd48), 1),
+                "72h_kt": round(float(spd72), 1),
+                "category": cat_idx
             },
             "ri_probability": round(ri_prob, 4),
             "landfall_probability": round(lf_prob, 4),
+            "landfall_details": {
+                "lat": round(float(lf_lat), 2),
+                "lon": round(float(lf_lon), 2),
+                "time_h": round(float(lf_time), 1)
+            },
             "ri_alert": ri_prob > 0.5,
         }
