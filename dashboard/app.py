@@ -21,7 +21,7 @@ import numpy as np
 import json
 from streamlit_folium import st_folium
 
-from dashboard.map_viz import render_storm_map
+from dashboard.map_viz import render_storm_map, SS_COLORS, SS_NAMES
 from dashboard.charts import (
     wind_forecast_chart, track_error_chart, ri_gauge, model_comparison_chart,
 )
@@ -350,20 +350,29 @@ if dashboard_mode == "📡 Live Monitor":
     try:
         from dashboard.live_tracker import fetch_live_storms
         live_storms = fetch_live_storms()
-        st.session_state["live_storms_cache"] = live_storms
-        live_options = {f"🔴 {sname}": f"LIVE_{sname}" for sname in reversed(list(live_storms.keys()))}
-    except Exception:
-        live_options = {}
         
-    if live_options:
-        colA, colB = st.columns([1, 3])
-        with colA:
-            selected_label = st.selectbox("Active Cyclone:", options=list(live_options.keys()))
-            selected_sid = live_options[selected_label]
-            st.session_state["active_live_storm"] = str(selected_sid).replace("LIVE_", "")
-            selected_sid = "CUSTOM"
-    else:
-        st.success("✓ No active cyclones detected. Automatically routing to clear Bay of Bengal view.")
+        if live_storms:
+            live_options = {f"🔴 {sname}": sname for sname in live_storms.keys()}
+            colA, colB = st.columns([1, 3])
+            with colA:
+                selected_label = st.selectbox("Active Cyclone:", options=list(live_options.keys()))
+                sname = live_options[selected_label]
+                track_points = live_storms[sname]
+                
+                # Assign to main track variables for prediction
+                track_lat = [p['lat'] for p in track_points]
+                track_lon = [p['lon'] for p in track_points]
+                track_wind = [p['wind'] for p in track_points]
+                storm_name = sname
+                selected_sid = "CUSTOM" # Treat as custom track points passed to solver
+                is_ready_to_render = True
+            with colB:
+                st.info(f"Tracking **{sname}** | Latest: {track_lat[-1]}N, {track_lon[-1]}E")
+        else:
+            st.success("✓ No active cyclones detected. Automatically routing to clear Bay of Bengal view.")
+            selected_sid = "LIVE_NONE"
+    except Exception as e:
+        st.error(f"Live Feed Error: {e}")
         selected_sid = "LIVE_NONE"
 
 elif dashboard_mode == "✍️ Custom Storm Input":
@@ -510,6 +519,34 @@ if is_ready_to_render:
                 f'<div class="metric-label">Max Wind (24h)</div>'
                 f'</div>', unsafe_allow_html=True
             )
+            
+        # 6-STAGE ENHANCED METRICS
+        if prediction:
+            m_col1, m_col2, m_col3 = st.columns(3)
+            with m_col1:
+                cat = prediction["wind"]["category"]
+                st.markdown(
+                    f'<div class="metric-card" style="border-left: 4px solid {SS_COLORS.get(cat, "#94a3b8")};">'
+                    f'<div class="metric-value" style="color:{SS_COLORS.get(cat, "white")};">{SS_NAMES.get(cat, "TD/TS")}</div>'
+                    f'<div class="metric-label">AI Intensity Category</div>'
+                    f'</div>', unsafe_allow_html=True
+                )
+            with m_col2:
+                lf = prediction.get("landfall_details", {})
+                st.markdown(
+                    f'<div class="metric-card">'
+                    f'<div class="metric-value">+{lf.get("time_h", "??")}h</div>'
+                    f'<div class="metric-label">Estimated Landfall</div>'
+                    f'</div>', unsafe_allow_html=True
+                )
+            with m_col3:
+                st.markdown(
+                    f'<div class="metric-card">'
+                    f'<div class="metric-value">{prediction.get("landfall_probability", 0.0)*100:.0f}%</div>'
+                    f'<div class="metric-label">Strike Confidence</div>'
+                    f'</div>', unsafe_allow_html=True
+                )
+
         with cols[1]:
             st.markdown(
                 f'<div class="metric-card">'
@@ -590,8 +627,10 @@ if is_ready_to_render:
             ensemble_forecasts=ensemble_tracks,
             show_cyclogenesis=expert_mode,
             official_forecast=official_f,
+            landfall_details=prediction.get("landfall_details") if prediction else None,
             storm_name=str(storm_name),
         )
+
         st_folium(storm_map, height=550, use_container_width=True)
 
     if prediction:

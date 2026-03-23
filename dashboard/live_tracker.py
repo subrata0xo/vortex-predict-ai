@@ -30,6 +30,11 @@ def fetch_live_storms():
         for item in root.findall(".//item"):
             event_type = item.find("gdacs:eventtype", ns)
             if event_type is not None and event_type.text == "TC":
+                description = item.find("description").text or ""
+                # Regional filter: Only show North Indian Ocean (Bay of Bengal / Arabian Sea)
+                if not any(region in description for region in ["North Indian", "Bay of Bengal", "Arabian Sea", "India", "Bangladesh", "Myanmar"]):
+                    continue
+
                 event_id = item.find("gdacs:eventid", ns).text
                 storm_name = item.find("gdacs:eventname", ns)
                 storm_name = storm_name.text if storm_name is not None else f"Cyclone {event_id}"
@@ -42,54 +47,33 @@ def fetch_live_storms():
                         geo_data = geo_resp.json()
                         track_points = []
                         
-                        # Parse the GeoJSON features
                         for feature in geo_data.get("features", []):
                             props = feature.get("properties", {})
                             geom = feature.get("geometry", {})
                             
-                            # We only want actual observed/historical track points, not the long-term forecast points
-                            # GDACS features have "tracktype": "past" or "forecast"
+                            # Obs/Past track points
                             if props.get("tracktype", "").lower() in ["past", "observed", ""]:
                                 if geom.get("type") == "Point":
                                     coords = geom.get("coordinates", [0, 0])
                                     lon, lat = coords[0], coords[1]
                                     
-                                    # KMH to Knots conversion roughly = kmh / 1.852
                                     wind_kmh = props.get("stormwind", 0)
                                     wind_kt = wind_kmh / 1.852 if wind_kmh else 0
-                                    
-                                    pressure = props.get("centralpressure")
-                                    
-                                    # Try to parse date string
+                                    pressure = props.get("centralpressure") or 1000.0
                                     date_str = props.get("todate", "")
                                     
                                     track_points.append({
-                                        "lat": float(lat),
-                                        "lon": float(lon),
-                                        "wind": float(wind_kt),
-                                        "pressure": float(pressure) if pressure else 1000.0,
+                                        "lat": float(lat), "lon": float(lon),
+                                        "wind": float(wind_kt), "pressure": float(pressure),
                                         "timestamp": date_str
                                     })
                                     
-                        # Sort chronologically
                         if track_points:
-                            track_points.reverse() # GeoJSON usually newest first
-                            
-                            # Since we need exactly 8 points (48 hours), grab the last 8
-                            if len(track_points) >= 8:
-                                active_storms[storm_name] = track_points[-8:]
-                            else:
-                                # Interpolate or pad if less than 8
-                                # For live demo, we pad the missing history with the earliest known point
-                                padded = track_points.copy()
-                                while len(padded) < 8:
-                                    padded.insert(0, padded[0])
-                                active_storms[storm_name] = padded
-                                
-                except Exception as e:
-                    print(f"Failed to fetch GeoJSON for {storm_name}: {e}")
+                            track_points.reverse() # Sort chronologically
+                            # Ensure lookback (exactly 8 points)
+                            active_storms[storm_name] = interpolate_live_track(track_points)
+                except Exception:
                     continue
-                    
         return active_storms
 
     except Exception as e:

@@ -38,7 +38,9 @@ def render_storm_map(track_lat: list, track_lon: list,
                      ensemble_forecasts: list = None,
                      show_cyclogenesis: bool = False,
                      official_forecast: dict = None,
+                     landfall_details: dict = None,
                      storm_name: str = "Storm") -> folium.Map:
+
     """
     Render a Folium map showing storm track, Weather Lab ensemble predictions, and cyclogenesis hotspots.
     """
@@ -162,9 +164,46 @@ def render_storm_map(track_lat: list, track_lon: list,
             tooltip="Official Model (Baseline)",
         ).add_to(m)
 
+    # ── Uncertainty Cone (95th Percentile Spread) ──────────────────────────────
+    if ensemble_forecasts and track_lat:
+        cone_points_left = []
+        cone_points_right = []
+        
+        # Add current position as the tip of the cone
+        cone_points_left.append([track_lat[-1], track_lon[-1]])
+        cone_points_right.append([track_lat[-1], track_lon[-1]])
+
+        for horizon in ["24h", "48h", "72h"]:
+            hs = [ens[horizon] for ens in ensemble_forecasts if horizon in ens]
+            if not hs: continue
+            
+            lats = [h['lat'] for h in hs]
+            lons = [h['lon'] for h in hs]
+            
+            # Use mean and standard deviation to find the "edges" of the cone
+            m_lat, s_lat = np.mean(lats), np.std(lats)
+            m_lon, s_lon = np.mean(lons), np.std(lons)
+            
+            # Simple approximation of the spread
+            cone_points_left.append([m_lat + 1.28 * s_lat, m_lon - 1.28 * s_lon])
+            cone_points_right.append([m_lat - 1.28 * s_lat, m_lon + 1.28 * s_lon])
+
+        # Construct the polygon (left points then reversed right points to close the loop)
+        full_cone = cone_points_left + cone_points_right[::-1]
+        folium.Polygon(
+            locations=full_cone,
+            color="#38bdf8",
+            weight=1,
+            fill=True,
+            fill_color="#38bdf8",
+            fill_opacity=0.15,
+            popup="Cone of Uncertainty (95%)",
+            tooltip="Ensemble Prediction Spread",
+        ).add_to(m)
+
     # ── Weather Lab Ensemble AI Forecasts ────────────────────────────────────
     if ensemble_forecasts and track_lat:
-        fg_ensemble = folium.FeatureGroup(name="AI Probabilistic Ensemble (50x)", show=True)
+        fg_ensemble = folium.FeatureGroup(name="AI Probabilistic Ensemble (50x)", show=False)
         for ens in ensemble_forecasts:
             ens_lats = [track_lat[-1]]
             ens_lons = [track_lon[-1]]
@@ -172,15 +211,15 @@ def render_storm_map(track_lat: list, track_lon: list,
                 ens_lats.append(ens[horizon]["lat"])
                 ens_lons.append(ens[horizon]["lon"])
             
-            # Very thin, standard polylines for efficiency and aesthetic
             folium.PolyLine(
                 locations=list(zip(ens_lats, ens_lons)),
                 color="#38bdf8", # Light blue
                 weight=1,
-                opacity=0.15,
+                opacity=0.08,
             ).add_to(fg_ensemble)
             
         fg_ensemble.add_to(m)
+
 
     # ── AI Mean Forecast track ───────────────────────────────────────────────
     if forecast and track_lat:
@@ -218,6 +257,23 @@ def render_storm_map(track_lat: list, track_lon: list,
                 popup=f"AI Forecast: {labels[i]}",
             ).add_to(m)
 
+    # ── Landfall Marker ──────────────────────────────────────────────────────
+    if landfall_details:
+        llat = landfall_details.get("lat")
+        llon = landfall_details.get("lon")
+        ltime = landfall_details.get("time_h")
+        if llat and llon:
+            folium.Marker(
+                location=[llat, llon],
+                icon=folium.Icon(color="red", icon="house-flood-water", prefix="fa"),
+                popup=(
+                    f"<b>Predicted Landfall</b><br>"
+                    f"ETA: +{ltime} hours<br>"
+                    f"Location: {llat}N, {llon}E"
+                ),
+                tooltip="AI Landfall Prediction"
+            ).add_to(m)
+
     # ── Legend ────────────────────────────────────────────────────────────────
     legend_html = """
     <div style="position:fixed; bottom:30px; left:30px; z-index:999;
@@ -226,8 +282,10 @@ def render_storm_map(track_lat: list, track_lon: list,
                 backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
                 font-family: 'Inter', sans-serif; font-size:12px; color:white;">
         <b style="color:#e2e8f0; font-size:13px; margin-bottom:4px; display:block;">Weather Lab Layers</b>
-        <div style="display:flex; align-items:center; margin-bottom:2px;"><span style="color:#0ea5e9; font-size:16px; margin-right:6px;">●</span> AI Mean Prediction</div>
-        <div style="display:flex; align-items:center; margin-bottom:2px;"><span style="color:#38bdf8; font-size:16px; margin-right:6px; opacity:0.5;">●</span> AI Ensemble (50 paths)</div>
+        <div style="display:flex; align-items:center; margin-bottom:2px;"><span style="color:#0ea5e9; font-size:11px; margin-right:6px;">──</span> AI Mean Prediction</div>
+        <div style="display:flex; align-items:center; margin-bottom:2px;"><span style="background:rgba(56,189,248,0.3); border:1px solid #38bdf8; width:12px; height:8px; margin-right:6px; display:inline-block;"></span> 95% Uncertainty Cone</div>
+        <div style="display:flex; align-items:center; margin-bottom:2px;"><span style="color:#38bdf8; font-size:14px; margin-right:6px; opacity:0.6;">●</span> 50-Member Ensemble</div>
+
     """
     
     if official_forecast:
