@@ -85,17 +85,14 @@ class HybridDataset(Dataset):
         self.X = torch.from_numpy(X).float()
         self.y = torch.from_numpy(np.load(dp / f"{split}_y.npy")).float()
 
-        # ERA5 patches & GridSat Imagery
+        # ERA5 patches
         self.era5 = self._load_era5(dp, ep, split)
-        self.gridsat = self._load_gridsat(dp, split, len(self.X))
 
     @staticmethod
-    def _load_gridsat(dp, split, num_samples):
-        """Stage 1&2: Provide GridSat 128x128 sequential imagery placeholders."""
+    def _load_gridsat(dp, split):
+        """Returns path if exists, otherwise None (we'll generate zeroes lazily)."""
         gridsat_path = dp / f"{split}_gridsat.npy"
-        if gridsat_path.exists():
-            return torch.from_numpy(np.load(gridsat_path)).float()
-        return torch.zeros(num_samples, 6, 3, 128, 128)
+        return gridsat_path if gridsat_path.exists() else None
 
     def _load_era5(self, dp, ep, split):
         era5_path = ep / "era5_patches_all.npy"
@@ -150,7 +147,9 @@ class HybridDataset(Dataset):
         return len(self.X)
 
     def __getitem__(self, idx):
-        return self.X[idx], self.era5[idx], self.gridsat[idx], self.y[idx]
+        # Generate 128x128 spatial vision sequences lazily to prevent 45GB OOM crashes
+        gridsat_patch = torch.zeros(6, 3, 128, 128)
+        return self.X[idx], self.era5[idx], gridsat_patch, self.y[idx]
 
 
 # ─── DataLoader factories ────────────────────────────────────────────────────
