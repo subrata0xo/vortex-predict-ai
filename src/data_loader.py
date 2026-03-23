@@ -219,6 +219,17 @@ def save_artifacts(split: dict, scaler: dict,
     print(f"[✓] Saved all artifacts to {sd}/")
 
 
+def process_gridsat_sequence(sid: str, df_storm: pd.DataFrame, data_dir: str) -> np.ndarray:
+    """
+    Stage 1 & 2: GridSat processing stub.
+    Loads raw satellite imagery for a storm, resizes to 128x128, 
+    and chunks into 6-frame temporal sequences.
+    Returns: numpy array of shape (N_samples, 6_frames, 3_channels, 128, 128)
+    """
+    N = len(df_storm)
+    C, H, W = 3, 128, 128
+    return np.zeros((N, 6, C, H, W), dtype=np.float32)
+
 def _haversine_speed(grp: pd.DataFrame) -> pd.Series:
     """Translation speed in km/h from consecutive lat/lon."""
     R = 6371.0

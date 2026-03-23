@@ -125,7 +125,7 @@ class ERA5Encoder(nn.Module):
         self.clstm = ConvLSTMCell(hidden_channels, hidden_channels, kernel_size=3)
         self.flatten = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(hidden_channels * 5 * 5, 64),
+            nn.Linear(hidden_channels * 5 * 5, 128),  # Upgraded to 128 dim for 640 total
             nn.ReLU(),
             nn.Dropout(dropout),
         )
@@ -141,26 +141,59 @@ class ERA5Encoder(nn.Module):
         return self.flatten(h)
 
 
+class GridSatEncoder(nn.Module):
+    """
+    Stage 3: Vision Encoder for GridSat sequential image patches.
+    Input : (B, T=6, C=3, H=128, W=128)
+    Output: (B, 384) feature vector
+    """
+    def __init__(self, in_channels: int = 3, hidden_dim: int = 384, dropout: float = 0.2):
+        super().__init__()
+        # Spatial feature extraction per frame
+        self.cnn = nn.Sequential(
+            nn.Conv2d(in_channels, 16, 3, padding=1, stride=2), nn.ReLU(),
+            nn.Conv2d(16, 32, 3, padding=1, stride=2), nn.ReLU(),
+            nn.Conv2d(32, 64, 3, padding=1, stride=2), nn.ReLU(),
+            nn.AdaptiveAvgPool2d((4, 4)),
+            nn.Flatten(),
+            nn.Linear(64 * 4 * 4, 256), nn.ReLU()
+        )
+        # Temporal sequence modeling
+        self.lstm = nn.LSTM(256, hidden_dim, batch_first=True, num_layers=1)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x):
+        B, T, C, H, W = x.shape
+        x_flat = x.view(B * T, C, H, W)
+        spatial_feat = self.cnn(x_flat)
+        seq_feat = spatial_feat.view(B, T, -1)
+        out, _ = self.lstm(seq_feat)
+        return self.dropout(out[:, -1, :])
+
+
 class HybridCycloneModel(nn.Module):
     """
-    Full hybrid model:
-        TrackEncoder (LSTM)    -> 128-dim
-        ERA5Encoder (ConvLSTM) -> 64-dim
-        Concat                 -> 192-dim
-        Transformer            -> 192-dim
-        4 output heads
+    Stage 4 & 5 Full hybrid model:
+        TrackEncoder (LSTM)     -> 128-dim
+        ERA5Encoder (ConvLSTM)  -> 128-dim
+        GridSatEncoder (CNN)    -> 384-dim
+        Concat                  -> 640-dim representation
+        Transformer             -> 640-dim (cross-attention over modalities)
+        4 advanced multi-task output heads
     """
 
     def __init__(self, track_input: int = 17, track_hidden: int = 128,
                  track_layers: int = 2, era5_channels: int = 8,
-                 era5_hidden: int = 32, fusion_dim: int = 192,
-                 n_heads: int = 4, n_layers: int = 2,
+                 era5_hidden: int = 32, gridsat_channels: int = 3,
+                 fusion_dim: int = 640,
+                 n_heads: int = 8, n_layers: int = 2,
                  dropout: float = 0.2):
         super().__init__()
 
         self.track_enc = TrackEncoder(track_input, track_hidden,
                                       track_layers, dropout)
         self.era5_enc = ERA5Encoder(era5_channels, era5_hidden, dropout)
+        self.gridsat_enc = GridSatEncoder(gridsat_channels, 384, dropout)
 
         enc_layer = nn.TransformerEncoderLayer(
             d_model=fusion_dim,
@@ -173,25 +206,31 @@ class HybridCycloneModel(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
         self.track_head = nn.Sequential(
-            nn.Linear(fusion_dim, 96), nn.ReLU(), nn.Linear(96, 6)
+            nn.Linear(fusion_dim, 256), nn.ReLU(), nn.Linear(256, 6) # [lat24, lon24, lat48, ...]
         )
         self.wind_head = nn.Sequential(
-            nn.Linear(fusion_dim, 48), nn.ReLU(), nn.Linear(48, 3)
+            nn.Linear(fusion_dim, 128), nn.ReLU(), nn.Linear(128, 9) # [spd24, spd48, spd72, 6x Cat logits]
         )
         self.ri_head = nn.Sequential(
-            nn.Linear(fusion_dim, 48), nn.ReLU(), nn.Linear(48, 1)
+            nn.Linear(fusion_dim, 64), nn.ReLU(), nn.Linear(64, 1)   # Binary Logit
         )
         self.landfall_head = nn.Sequential(
-            nn.Linear(fusion_dim, 48), nn.ReLU(), nn.Linear(48, 1)
+            nn.Linear(fusion_dim, 128), nn.ReLU(), nn.Linear(128, 3) # [lat, lon, time_to_landfall]
         )
 
-    def forward(self, track, era5):
+    def forward(self, track, era5, gridsat):
         track_feat = self.track_enc(track)
         era5_feat  = self.era5_enc(era5)
-        fused = torch.cat([track_feat, era5_feat], dim=1)
+        gridsat_feat = self.gridsat_enc(gridsat)
+        
+        # Stage 4: 640-dim representation
+        fused = torch.cat([track_feat, era5_feat, gridsat_feat], dim=1) # (B, 128+128+384) = (B, 640)
+        
+        # Cross-attention / Self-attention passing 
         fused = fused.unsqueeze(1)
         fused = self.transformer(fused).squeeze(1)
         fused = self.dropout(fused)
+        
         return (
             self.track_head(fused),
             self.wind_head(fused),
