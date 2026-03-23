@@ -456,10 +456,13 @@ elif selected_sid == "CUSTOM":
             
 elif selected_sid and not raw_data.empty:
     storm_data = raw_data[raw_data["SID"] == selected_sid].sort_values("ISO_TIME")
+    
     if not storm_data.empty:
-        storm_name = str(storm_data.iloc[0].get("NAME", selected_sid))
-        track_lat = storm_data["LAT"].dropna().tolist()
-        track_lon = storm_data["LON"].dropna().tolist()
+        # Prevent misaligned track arrays by dropping empty coordinates together
+        storm_data = storm_data.dropna(subset=["LAT", "LON"])
+        storm_name = str(storm_data.iloc[0].get("NAME", selected_sid)) if not storm_data.empty else selected_sid
+        track_lat = storm_data["LAT"].tolist()
+        track_lon = storm_data["LON"].tolist()
         track_wind = storm_data["WMO_WIND"].fillna(0).tolist()
         
         if len(storm_data) >= 8:
