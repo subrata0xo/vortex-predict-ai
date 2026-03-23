@@ -15,6 +15,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import numpy as np
 import json
@@ -33,6 +34,83 @@ st.set_page_config(
     page_icon="🌀",
     layout="wide",
     initial_sidebar_state="expanded",
+)
+
+# --- Ambient Particle Animation (JS) ---
+components.html(
+    """
+    <script>
+    const parent = window.parent.document;
+    if (!parent.getElementById('weather-lab-anim')) {
+        const canvas = parent.createElement('canvas');
+        canvas.id = 'weather-lab-anim';
+        canvas.style.position = 'fixed';
+        canvas.style.top = '0';
+        canvas.style.left = '0';
+        canvas.style.width = '100vw';
+        canvas.style.height = '100vh';
+        canvas.style.pointerEvents = 'none';
+        canvas.style.zIndex = '0'; 
+        
+        const appNode = parent.querySelector('.stApp');
+        if (appNode) {
+            appNode.insertBefore(canvas, appNode.firstChild);
+        }
+
+        const ctx = canvas.getContext('2d');
+        let width = parent.innerWidth;
+        let height = parent.innerHeight;
+        canvas.width = width;
+        canvas.height = height;
+
+        parent.addEventListener('resize', () => {
+            width = parent.innerWidth;
+            height = parent.innerHeight;
+            canvas.width = width;
+            canvas.height = height;
+        });
+
+        const particles = [];
+        for(let i=0; i<150; i++) {
+            particles.push({
+                x: Math.random() * width,
+                y: Math.random() * height,
+                length: Math.random() * 20 + 10,
+                speed: Math.random() * 2 + 0.5,
+                angle: (Math.random() * 20 - 10) * Math.PI / 180,
+                baseOpacity: Math.random() * 0.4 + 0.1
+            });
+        }
+
+        function animate() {
+            ctx.clearRect(0, 0, width, height);
+            
+            for (let i = 0; i < particles.length; i++) {
+                let p = particles[i];
+                p.x += Math.cos(p.angle) * p.speed * 2;
+                p.y += Math.sin(p.angle) * p.speed * 2;
+                
+                if (p.x > width) p.x = -p.length;
+                if (p.x < -p.length) p.x = width;
+                if (p.y > height) p.y = -p.length;
+                if (p.y < -p.length) p.y = height;
+
+                ctx.beginPath();
+                ctx.moveTo(p.x, p.y);
+                ctx.lineTo(p.x + Math.cos(p.angle)*p.length, p.y + Math.sin(p.angle)*p.length);
+                ctx.strokeStyle = `rgba(56, 189, 248, ${p.baseOpacity})`;
+                ctx.lineWidth = 1.5;
+                ctx.lineCap = 'round';
+                ctx.stroke();
+            }
+            parent.requestAnimationFrame(animate);
+        }
+        animate();
+    }
+    </script>
+    """,
+    height=0,
+    width=0
 )
 
 # ─── Custom CSS ──────────────────────────────────────────────────────────────
