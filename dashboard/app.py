@@ -631,7 +631,8 @@ if is_ready_to_render:
             storm_name=str(storm_name),
         )
 
-        st_folium(storm_map, height=550, use_container_width=True)
+        st_folium(storm_map, height=550, use_container_width=True, returned_objects=[])
+
 
     if prediction:
         chart_col1, chart_col2 = st.columns(2)
