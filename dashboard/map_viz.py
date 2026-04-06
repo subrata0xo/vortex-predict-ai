@@ -39,6 +39,7 @@ def render_storm_map(track_lat: list, track_lon: list,
                      show_cyclogenesis: bool = False,
                      official_forecast: dict = None,
                      landfall_details: dict = None,
+                     bg_track: dict = None,
                      storm_name: str = "Storm") -> folium.Map:
 
     """
@@ -93,6 +94,17 @@ def render_storm_map(track_lat: list, track_lon: list,
                     popup="Early Formation Risk (~2%)"
                 ).add_to(fg_cyclo)
         fg_cyclo.add_to(m)
+
+    # ── Full History Background (Faint) ──────────────────────────────────────
+    if bg_track:
+        folium.PolyLine(
+            locations=list(zip(bg_track["lat"], bg_track["lon"])),
+            color="#ffffff",
+            weight=1,
+            opacity=0.3,
+            dash_array="5, 5",
+            tooltip="Full Historical Path",
+        ).add_to(m)
 
     # ── Historical track ─────────────────────────────────────────────────────
     if track_wind is None:

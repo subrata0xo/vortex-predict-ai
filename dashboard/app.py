@@ -395,9 +395,32 @@ elif dashboard_mode == "📚 Historical Archive":
                 
             selected_label = st.selectbox("Select Storm", options=list(storm_options.keys()))
             selected_sid = storm_options[selected_label]
+            
+            # --- Timeline Slider Logic ---
+            full_storm_data = raw_data[raw_data["SID"] == selected_sid].sort_values("ISO_TIME")
+            full_storm_data = full_storm_data.dropna(subset=["LAT", "LON"])
+            
+            if not full_storm_data.empty and len(full_storm_data) >= 8:
+                st.markdown("---")
+                st.markdown("**Timeline Navigation**")
+                # Slider to pick the "End" of the 48h observation window
+                max_idx = len(full_storm_data)
+                step_idx = st.slider(
+                    "Forecast Snapshot", 
+                    min_value=8, 
+                    max_value=max_idx, 
+                    value=max_idx,
+                    help="Pick a moment in the storm's history to see the AI's prediction at that time."
+                )
+                storm_data_subset = full_storm_data.iloc[step_idx-8:step_idx]
+                st.caption(f"Validating snapshot at: {storm_data_subset.iloc[-1]['ISO_TIME']}")
+            else:
+                storm_data_subset = full_storm_data
         else:
             st.warning("No historical metadata found")
             selected_sid = None
+            full_storm_data = pd.DataFrame()
+            storm_data_subset = pd.DataFrame()
 
 
 st.divider()
@@ -464,20 +487,29 @@ elif selected_sid == "CUSTOM":
             st.error(f"Prediction inference failed: {e}")
             
 elif selected_sid and not raw_data.empty:
-    storm_data = raw_data[raw_data["SID"] == selected_sid].sort_values("ISO_TIME")
+    # Use the subset selected by the slider if available, otherwise fallback to tail
+    if 'storm_data_subset' in locals() and not storm_data_subset.empty:
+        storm_data = storm_data_subset
+    else:
+        storm_data = raw_data[raw_data["SID"] == selected_sid].sort_values("ISO_TIME").dropna(subset=["LAT", "LON"])
     
     if not storm_data.empty:
-        # Prevent misaligned track arrays by dropping empty coordinates together
-        storm_data = storm_data.dropna(subset=["LAT", "LON"])
         storm_name = str(storm_data.iloc[0].get("NAME", selected_sid)) if not storm_data.empty else selected_sid
         track_lat = storm_data["LAT"].tolist()
         track_lon = storm_data["LON"].tolist()
         track_wind = storm_data["WMO_WIND"].fillna(0).tolist()
         
+        # Background track for context
+        bg_track = None
+        if 'full_storm_data' in locals() and not full_storm_data.empty:
+            bg_track = {
+                "lat": full_storm_data["LAT"].tolist(),
+                "lon": full_storm_data["LON"].tolist()
+            }
+        
         if len(storm_data) >= 8:
-            last_obs = storm_data.tail(8)
             track_points = []
-            for _, row in last_obs.iterrows():
+            for _, row in storm_data.iterrows():
                 track_points.append({
                     "lat": row["LAT"], "lon": row["LON"],
                     "wind": row.get("WMO_WIND", 0) or 0,
@@ -628,8 +660,10 @@ if is_ready_to_render:
             show_cyclogenesis=expert_mode,
             official_forecast=official_f,
             landfall_details=prediction.get("landfall_details") if prediction else None,
+            bg_track=bg_track if 'bg_track' in locals() else None,
             storm_name=str(storm_name),
         )
+
 
         st_folium(storm_map, height=550, use_container_width=True, returned_objects=[])
 
