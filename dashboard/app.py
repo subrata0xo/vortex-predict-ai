@@ -300,7 +300,7 @@ with st.sidebar:
     )
 
     st.divider()
-    st.markdown("### ℹ️ Active Model Error")
+    st.markdown("### ℹ️ Performance Metrics")
     if test_results.get(model_type):
         tr = test_results[model_type]
         st.markdown(f"- **Track (24h)**: {tr.get('track_24h_km', 0):.0f} km")

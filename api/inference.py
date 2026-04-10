@@ -107,6 +107,18 @@ class ModelServer:
             features[i, 6] = features[i, 4] - features[i-1, 4]  # dLAT_2
             features[i, 7] = features[i, 5] - features[i-1, 5]  # dLON_2
 
+        # Backfill deltas to prevent stationary zeroes at t=0
+        if n > 1:
+            features[0, 4] = features[1, 4]
+            features[0, 5] = features[1, 5]
+            features[0, 8] = features[1, 8]
+            features[0, 9] = features[1, 9]
+        if n > 2:
+            features[0, 6] = features[2, 6]
+            features[1, 6] = features[2, 6]
+            features[0, 7] = features[2, 7]
+            features[1, 7] = features[2, 7]
+
         # Translation speed (km/h)
         R = 6371.0
         for i in range(1, n):
@@ -116,6 +128,9 @@ class ModelServer:
             dln  = np.radians(features[i, 5])
             a = np.sin(dlt/2)**2 + np.cos(lat1)*np.cos(lat2)*np.sin(dln/2)**2
             features[i, 10] = 2 * R * np.arcsin(min(np.sqrt(max(a, 0)), 1)) / 6.0
+
+        if n > 1:
+            features[0, 10] = features[1, 10]
 
         # Temporal features (use timestamp if available, else dummy)
         import math
@@ -188,13 +203,20 @@ class ModelServer:
         wind_raw = wind_pred[0].numpy()
         spd24, spd48, spd72 = wind_raw[0], wind_raw[1], wind_raw[2]
         cat_logits = wind_raw[3:]
-        cat_idx = int(np.argmax(cat_logits))
+        if len(cat_logits) > 0:
+            cat_idx = int(np.argmax(cat_logits))
+        else:
+            cat_idx = self._wind_to_category_fallback(float(spd24))
         
         ri_prob = torch.sigmoid(ri_pred[0, 0]).item()
         
         # Landfall head: [lat, lon, time]
         lf_raw = lf_pred[0].numpy()
-        lf_lat, lf_lon, lf_time = lf_raw[0], lf_raw[1], lf_raw[2]
+        if len(lf_raw) >= 3:
+            lf_lat, lf_lon, lf_time = lf_raw[0], lf_raw[1], lf_raw[2]
+        else:
+            # Fallback for LSTM which only outputs a proxy/timing or probability
+            lf_lat, lf_lon, lf_time = track[0], track[1], 48.0
         lf_prob = 1.0 if lf_time < 72 else 0.0 # Heuristic for dashboard compat
 
         return {
@@ -222,3 +244,12 @@ class ModelServer:
             },
             "ri_alert": ri_prob > 0.5,
         }
+
+    def _wind_to_category_fallback(self, wind_kt: float) -> int:
+        if wind_kt < 33:    return 0
+        elif wind_kt < 63:  return 0
+        elif wind_kt < 82:  return 1
+        elif wind_kt < 95:  return 2
+        elif wind_kt < 112: return 3
+        elif wind_kt < 136: return 4
+        else:               return 5

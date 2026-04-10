@@ -237,16 +237,36 @@ def render_storm_map(track_lat: list, track_lon: list,
     if forecast and track_lat:
         forecast_lats = [track_lat[-1]]
         forecast_lons = [track_lon[-1]]
-        labels = ["Now", "24h", "48h", "72h"]
+        labels = ["Now"]
 
         for horizon in ["24h", "48h", "72h"]:
             if horizon in forecast:
                 forecast_lats.append(forecast[horizon]["lat"])
                 forecast_lons.append(forecast[horizon]["lon"])
+                labels.append(f"{horizon}")
+
+        try:
+            from scipy.interpolate import splprep, splev
+            # Spline requires distinct points, add small noise to avoid error if stationary
+            x = np.array(forecast_lons)
+            y = np.array(forecast_lats)
+            x += np.random.normal(0, 1e-4, len(x))
+            y += np.random.normal(0, 1e-4, len(y))
+            
+            k_deg = min(3, len(x)-1)
+            if k_deg > 0:
+                tck, u = splprep([x, y], s=0.0, k=k_deg)
+                u_new = np.linspace(u.min(), u.max(), 30)
+                x_smooth, y_smooth = splev(u_new, tck)
+                smooth_locations = list(zip(y_smooth, x_smooth))
+            else:
+                smooth_locations = list(zip(forecast_lats, forecast_lons))
+        except Exception:
+            smooth_locations = list(zip(forecast_lats, forecast_lons))
 
         # Deepmind style: Bold blue line for the mean prediction
         plugins.AntPath(
-            locations=list(zip(forecast_lats, forecast_lons)),
+            locations=smooth_locations,
             color="#0ea5e9",  # Vibrant cyan/blue
             pulse_color="#ffffff",
             weight=5,
